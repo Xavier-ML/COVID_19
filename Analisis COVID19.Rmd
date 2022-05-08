@@ -1,0 +1,374 @@
+---
+title: "Analisis COVID19"
+author: "Javier René Quispe Tenorio"
+date: "11/4/2022"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reticulate)
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(magrittr)
+library(lubridate)
+library(rnaturalearthhires)
+library(rnaturalearth)
+library(ggplot2)
+library(tidyverse)
+```
+
+## Carga y limpieza premilinar de los datos
+
+Los datos que se van a analizar en este documento, proceden de la compilación hecha por usuarios de 
+[Kaggle](https://www.kaggle.com/datasets/imdevskp/corona-virus-report). La fecha del análisis empieza el 6 de Abril de 2020, utilizando la versión número 73 recopilada en la web anterior
+
+```{python}
+import pandas as pd
+datos = pd.read_csv("covid_19_clean_complete.csv")
+datos.head(10)
+```
+
+```{r}
+pd <- import("pandas")
+datos <- pd$read_csv("covid_19_clean_complete.csv")
+kable(head(datos,10))
+```
+
+```{r}
+datos <- read.csv("covid_19_clean_complete.csv",stringsAsFactors = FALSE)
+datos %>% head(10) %>% kable()
+```
+
+## Estructuras de datos
+```{r}
+str(datos)
+```
+
+```{r}
+colnames(datos) = c("Provincia_Estado",
+"Pais_Region",
+"Latitud", # N+ o S-
+"Longitud", # E+ o W-
+"Fecha",
+"Casos_Confirmados",
+"Casos_Muertos",
+"Casos_Recuperados",
+"Activo/activa",
+"WHO_Region"
+)
+
+datos %>% head() %>% kable() %>% kable_classic()
+```
+
+* Cualitativas se convierten con 'factor' o bien 'as.factor'.
+* Ordinales se convierten con 'ordered'.
+* Cuantitativos se convierten con 'as.numeric'.
+
+```{r}
+datos$Provincia_Estado %<>% factor()
+datos$Pais_Region %<>% factor()
+# datos$Fecha %<>% as.Date(format =" %Y-%m-%d ")
+datos$Fecha %<>% lubridate::ymd()
+str(datos)
+```
+
+$$ Casos\ Confirmados = Muertos + Recuperados + Enfermos$$
+```{r}
+datos %<>%
+        mutate(Casos_Enfermos = Casos_Confirmados - Casos_Muertos - Casos_Recuperados)
+datos %>% tail %>% kable()
+```
+
+
+```{r}
+datos1 <- filter(datos,Casos_Enfermos < 0)
+datos1 <- arrange(datos1,Provincia_Estado, Fecha)
+datos1 %>% head() %>% kable()
+```
+
+
+```{r}
+datos2 <- filter(datos, Casos_Confirmados > 1000)
+datos2 %>% kable()
+```
+
+```{r}
+datos3 <- filter(datos, Provincia_Estado == "Hainan")
+datos3 %>% kable()
+```
+
+```{r}
+datos4 <- filter(datos, Provincia_Estado == "Hainan",Casos_Enfermos < 0)
+datos4 %<>%
+        mutate(Casos_Recuperados = Casos_Recuperados + Casos_Enfermos,Casos_Enfermos = 0)
+datos4 %>% kable()
+```
+
+# Análisis geográfico
+
+```{r}
+datos_europa = datos[datos$Latitud > 38 & datos$Longitud > -25 & datos$Longitud < 30, ]
+
+# datos_europa = datos %>% filter(Latitud > 38, between(Longitud, -25, 30))
+
+nrow(datos_europa)
+
+table(datos_europa$Pais_Region) %>% as.data.frame() %>% filter(Freq > 0) %>% kable()
+
+datos_europa %>% filter(Fecha == ymd("2020-03-15")) %>%
+  kable()
+```
+
+$$ d(x,y) = \sqrt{(x_{Lat}-y_{Lat})^2 + (x_{Long}-y_{Long})^2}$$
+
+```{r}
+distancia_grados = function(x,y){sqrt((x[1]-y[1])^2 + (x[2]-y[2])^2)}
+
+distancia_grados_potsdam = function(x){
+  potsdam = c(52.366956, 13.906734)
+  distancia_grados(x, potsdam)
+}
+  
+dist_potsdam = apply(cbind(datos_europa$Latitud, datos_europa$Longitud),
+                     MARGIN = 1,
+                     FUN = distancia_grados_potsdam)
+
+datos_europa %<>% mutate(dist_potsdam = dist_potsdam)
+
+datos_europa %>% filter(between(Fecha, dmy("2-3-2020"), dmy("7-3-2020")), dist_potsdam < 4) %>% kable()
+```
+
+```{r}
+str(datos)
+```
+
+#Instalación de la libreria rnaturaleathhires
+
+```{r}
+#install.packages("rnaturalearthhires",repos = "http://packages.ropensci.org",type = "source")
+```
+```{r}
+#install.packages(c("Hmisc","dplyr","soilDB","soiltexture","ggplot2","sf","caret","rnaturalearth","skimr","cowsay","randomForest","kernlab","MASS"),repos = "http://cran.us.r-project.org")
+```
+```{r}
+datos <- read.csv("covid_19_clean_complete.csv",stringsAsFactors = FALSE)
+#datos %>% head(10) %>% kable()
+
+colnames(datos) = c("Provincia_Estado",
+"Pais_Region",
+"Latitud", # N+ o S-
+"Longitud", # E+ o W-
+"Fecha",
+"Casos_Confirmados",
+"Casos_Muertos",
+"Casos_Recuperados",
+"Activo/activa",
+"WHO_Region"
+)
+
+datos$Provincia_Estado %<>% factor()
+datos$Pais_Region %<>% factor()
+# datos$Fecha %<>% as.Date(format =" %Y-%m-%d ")
+datos$Fecha %<>% lubridate::ymd()
+#str(datos)
+#datos %>% head() %>% kable() %>% kable_classic()
+
+datos %<>%
+        mutate(Casos_Enfermos = Casos_Confirmados - Casos_Muertos - Casos_Recuperados)
+#datos %>% tail %>% kable()
+
+world <- ne_countries(scale = "Large", returnclass = "sf")
+datos$Pais_Region = factor(datos$Pais_Region, levels = c(levels(datos$Pais_Region),"United States"))
+datos[datos$Pais_Region=="US",]$Pais_Region = "United States"
+
+world %>% 
+  inner_join(datos, by = c("name_long" = "Pais_Region")) %>% filter(Fecha == dmy("14-04-2020")) %>% 
+  ggplot() + geom_sf(color = "black", aes(fill = Casos_Confirmados)) + coord_sf(crs = "+proj=laea + lat_0=50 + lon_0=10 + units=m + ellps = GRS80") + 
+  scale_fill_viridis_c(option = "plasma", trans = "sqrt")+ xlab("Longitud") + ylab("Latitud") +
+  ggtitle("Mapa del mundo", subtitle = "COVID 19")
+```
+
+```{r}
+datos %>% 
+  filter(Fecha == dmy("30-03-2020")) %>% 
+  ggplot(aes(Longitud, Latitud)) +
+  geom_point(aes(size = log(Casos_Confirmados+1),colour = log(Casos_Muertos+1))) + 
+  coord_fixed()
+# theme(legend.position = "bottom")
+```
+
+```{r}
+# install.packages("plotly")
+
+library(plotly)
+```
+
+```{r}
+datos <- read.csv("covid_19_clean_complete.csv",stringsAsFactors = FALSE)
+#datos %>% head(10) %>% kable()
+
+colnames(datos) = c("Provincia_Estado",
+"Pais_Region",
+"Latitud", # N+ o S-
+"Longitud", # E+ o W-
+"Fecha",
+"Casos_Confirmados",
+"Casos_Muertos",
+"Casos_Recuperados",
+"Activo/activa",
+"WHO_Region"
+)
+
+datos$Provincia_Estado %<>% factor()
+datos$Pais_Region %<>% factor()
+# datos$Fecha %<>% as.Date(format =" %Y-%m-%d ")
+datos$Fecha %<>% lubridate::ymd()
+#str(datos)
+#datos %>% head() %>% kable() %>% kable_classic()
+
+datos %<>%
+        mutate(Casos_Enfermos = Casos_Confirmados - Casos_Muertos - Casos_Recuperados)
+#datos %>% tail %>% kable()
+
+world <- ne_countries(scale = "Large", returnclass = "sf")
+datos$Pais_Region = factor(datos$Pais_Region, levels = c(levels(datos$Pais_Region), "United States"))
+datos[datos$Pais_Region=="US",]$Pais_Region = "United States"
+
+world %>% 
+  inner_join(datos, by = c("name_long" = "Pais_Region")) %>% filter(Fecha == dmy("14-04-2020")) %>% 
+  ggplot() + geom_sf(color = "black", aes(fill = Casos_Confirmados)) + #coord_sf(crs = "+proj=laea + lat_0=50 + lon_0=10 + units=m + ellps = GRS80") + 
+  scale_fill_viridis_c(option = "plasma", trans = "sqrt")+ xlab("Longitud") + ylab("Latitud") +
+  ggtitle("Mapa del mundo", subtitle = "COVID 19") -> g
+```
+
+```{r}
+g
+```
+
+```{r}
+ggplotly(g)
+```
+
+```{r}
+datos %>% 
+  filter(Fecha == ymd("2020-03-25"),
+         Casos_Confirmados > 1000) %>%
+  mutate(Prop_Muertos = Casos_Muertos/Casos_Confirmados, Ranking = dense_rank(desc(Prop_Muertos))) %>%
+  arrange(Ranking) %>%
+  head(20) %>%
+  kable()
+```
+
+```{r}
+datos$lat_class = cut(datos$Latitud,breaks=seq(from = -90, to = 90, by=10))
+datos$long_class = cut(datos$Longitud,breaks = seq(from = -180, to = 180, by=10))
+tt = table(datos$lat_class, datos$long_class)
+tt = tt[nrow(tt):1,]
+tt
+mosaicplot(t(tt), shade = TRUE)
+```
+
+# Analisis de datos temporales
+
+```{r}
+datos_por_fecha = aggregate(cbind(Casos_Confirmados, Casos_Muertos, Casos_Recuperados)~Fecha,data=datos,
+                            FUN = sum
+                            )
+datos_por_fecha$Casos_Enfermos = datos_por_fecha$Casos_Confirmados - datos_por_fecha$Casos_Muertos- datos_por_fecha$Casos_Recuperados
+head(datos_por_fecha)
+tail(datos_por_fecha)
+
+barplot(Casos_Confirmados ~ Fecha, data = datos_por_fecha)
+
+plot(Casos_Confirmados ~ Fecha, data = datos_por_fecha, col = "blue", type = "l", main = "Casos documentados por día en todo el mundo", xlab = "Fecha", ylab = "Número de personas", log = "y")
+lines(Casos_Muertos ~ Fecha, data = datos_por_fecha, col = "red")
+lines(Casos_Recuperados ~ Fecha, data = datos_por_fecha, col = "green")
+
+legend("topleft", c("Confirmados","Muertos","Recuperados"),col = c("blue", "red", "green"), pch = 1, lwd = 2)
+```
+
+
+```{r}
+datos_spain = datos %>% 
+  filter(Pais_Region == "Spain") %>%
+  select(Fecha, starts_with("Casos_"))
+plot(x = datos_spain$Fecha, y = datos_spain$Casos_Confirmados,
+     main = "Casos confirmados en España", type = "s",
+     col = "blue", lwd = 2)
+```
+
+```{r}
+datos_peru = datos %>% filter(Pais_Region == "Peru") %>% select(Fecha, starts_with("Casos_"))
+plot(x = datos_peru$Fecha, y = datos_peru$Casos_Confirmados, main = "Casos confirmados de Perú", type = "s", col ="blue", lwd = 2)
+
+barplot(as.matrix(t(datos_peru[,3:5])), names = datos_peru$Fecha, col = c("red","green","yellow"))
+
+legend("topleft", c("Muertos","Recuperados","Enfermos"), col = c("red","green","yellow"), lwd = 2, pch = 1)
+```
+
+```{r}
+#install.packages("xts")
+#install.packages("dygraphs")
+library(xts)
+library(dygraphs)
+```
+
+```{r}
+datos_por_fecha_ts <- xts(x = datos_por_fecha[,2:5],
+                          order.by = datos_por_fecha$Fecha)
+
+dygraph(datos_por_fecha_ts) %>% 
+  dyOptions(labelsUTC = TRUE, labelsKMB = TRUE, fillGraph = TRUE, fillAlpha = 0.05, drawGrid = FALSE, #colors = "#D9AE55" 
+            ) %>% dyRangeSelector() %>% dyCrosshair(direction = "vertical") %>% dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE) %>% dyRoller(rollPeriod = 2)
+```
+
+```{r}
+# datos_por_fecha_peru_ts <- filter(datos_peru, datos_peru$Casos_Confirmados > 0)
+datos_por_fecha_peru_ts <- xts(x = datos_peru[,2:5],
+                          order.by = datos_peru$Fecha)
+
+dygraph(datos_por_fecha_peru_ts) %>% 
+  dyOptions(labelsUTC = TRUE, labelsKMB = TRUE, fillGraph = TRUE, fillAlpha = 0.05, drawGrid = FALSE, #colors = "#D9AE55" 
+            ) %>% dyRangeSelector() %>% dyCrosshair(direction = "vertical") %>% dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE) %>% dyRoller(rollPeriod = 2)
+```
+
+```{r}
+datos_peru %<>% 
+  mutate(Nuevos_Casos_Confirmados = Casos_Confirmados - lag(Casos_Confirmados, n = 1), Nuevos_Casos_Muertos = Casos_Muertos - lag(Casos_Muertos, n = 1), Nuevos_Casos_Recuperados = Casos_Recuperados - lag(Casos_Recuperados,n=1), Nuevos_Casos_Enfermos = Casos_Enfermos - lag(Casos_Enfermos, n = 1))
+
+datos_peru %>% kable()
+
+plot(Nuevos_Casos_Confirmados ~ Fecha, data = datos_peru, type = "l", col = "blue", xlab = "Fecha", ylab = "Nuevos casos", main = "Nuevos registros en Perú")
+#lines(Nuevos_Casos_Enfermos ~ Fecha, data = datos_peru, type = "l", col = "yellow")
+lines(Nuevos_Casos_Muertos ~ Fecha, data = datos_peru, type = "l", col = "red")
+lines(Nuevos_Casos_Recuperados ~ Fecha, data = datos_peru, type = "l", col = "green")
+legend("topleft",c("confirmados","Muertos","Recuperados"), col = c("blue","red","green"), lwd = 2, pch = 1)
+```
+
+# Tasa de variación media
+
+```{r}
+datos_peru %<>% 
+  mutate(TVM_confirmados = (Casos_Confirmados - lag(Casos_Confirmados,n = 1))/Casos_Confirmados)
+datos_peru %>% kable()
+plot(TVM_confirmados ~ Fecha, data = datos_peru, type = "l", col = "blue", xlab = "Fecha", ylab = "Tasa de variacion media", main = "Tasa de variación media en el Perú")
+
+datos_por_fecha_peru_ts_TVM <- xts(x = datos_peru[,10],
+                          order.by = datos_peru$Fecha)
+
+dygraph(datos_por_fecha_peru_ts_TVM) %>% 
+  dyOptions(labelsUTC = TRUE, labelsKMB = FALSE, fillGraph = TRUE, fillAlpha = 0.05, drawGrid = FALSE, #colors = "#D9AE55" 
+            ) %>% dyRangeSelector() %>% dyCrosshair(direction = "vertical") %>% dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE) %>% dyRoller(rollPeriod = 2)
+```
+
+##Pregunta 3
+
+En la grafica se puede observar que hasta 17 de Junio es muy erratica la aparicion de contagiados eso se debe a las politicas implementadas y tardias, en al republica del Perú.
+Donde la toma de decision y los cambios de gobernantes hicieron que el sector salud no contabilice exactamente los infectados con COVID-19, pasando esta fecha con las politicas de cuarentena y vacuanción, hicieron que este contagio sea más leve y no tan erratica como al incio.
+En el mes de julio hubo contagios más controlados, además se observa al final de la grafica hay un cambio repentino , que es más por la tercera ola de contagios en mi país.
+Estos datos se deberian constrastar con valores tomados por INEI(instituto nacional de estadistica e informatica) que se encarga de recopilar lkos datos en el Perú.
